@@ -15,9 +15,6 @@ Size calculateTextBounds(
   );
 }
 
-const paragraphStyle = TextStyle(fontSize: 16);
-const headerStyle = TextStyle(fontSize: 24, fontWeight: FontWeight.bold);
-
 abstract class BookElement {
   final String content;
   final TextStyle style;
@@ -130,14 +127,14 @@ class BookContainer {
       }
 
       if (first.isNotEmpty) {
-        _pages.last.append(element.copyWithContent(first));
+        append(element.copyWithContent(first));
       }
 
       _pages.add(PageContainer(bounds: bounds));
 
       if (first != element.content) {
         final second = element.content.substring(first.length);
-        _pages.last.append(element.copyWithContent(second));
+        append(element.copyWithContent(second));
       }
     }
   }
