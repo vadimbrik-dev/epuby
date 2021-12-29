@@ -148,7 +148,10 @@ class XmlToBookAdapter {
 
   XmlToBookAdapter({required this.content});
 
-  BookContainer render({required Size bounds}) {
+  BookContainer render(
+      {required Size bounds,
+      required TextStyle headerStyle,
+      required TextStyle paragraphStyle}) {
     final document = parse(content);
     final nodes = document
         .querySelectorAll("h1, h2, h3, h4, h5, h6, p")
