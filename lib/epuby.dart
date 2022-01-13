@@ -1,178 +1,104 @@
 library epuby;
 
+import 'dart:typed_data';
+
+import 'package:bookvar/bookvar.dart' as bookvar;
 import 'package:flutter/material.dart';
-import 'package:html/parser.dart';
 
-Size calculateTextBounds(
-    {required Size container,
-    required TextSpan text,
-    required EdgeInsets padding}) {
-  final painter = TextPainter(text: text, textDirection: TextDirection.ltr)
-    ..layout(maxWidth: container.width - padding.horizontal);
-  return Size(
-    painter.width + padding.horizontal,
-    painter.height + padding.vertical,
-  );
-}
-
-abstract class BookElement {
-  final String content;
-  final TextStyle style;
+class ElementStyle {
+  final TextStyle textStyle;
   final EdgeInsets padding;
 
-  BookElement({
-    required this.content,
-    required this.style,
+  ElementStyle({required this.textStyle, required this.padding});
+}
+
+class BookThemeData {
+  final double scaleFactor;
+  final EdgeInsets padding;
+  final ElementStyle header;
+  final ElementStyle paragraph;
+
+  const BookThemeData({
     required this.padding,
+    required this.header,
+    required this.paragraph,
+    required this.scaleFactor,
   });
+}
 
-  BookElement copyWithContent(String content);
+class BookTheme extends InheritedWidget {
+  final BookThemeData data;
 
-  Widget get widget => Padding(
-        padding: padding,
-        child: Text(content, style: style, textAlign: TextAlign.justify),
+  const BookTheme({
+    Key? key,
+    required this.data,
+    required Widget child,
+  }) : super(key: key, child: child);
+
+  static BookThemeData of(BuildContext context) {
+    final result = context.dependOnInheritedWidgetOfExactType<BookTheme>();
+    assert(result != null, 'No BookTheme found in context');
+    return result!.data;
+  }
+
+  @override
+  bool updateShouldNotify(_) => true;
+}
+
+class BookRenderer {
+  BookThemeData theme;
+
+  BookRenderer({required this.theme});
+
+  ElementStyle getStyle(bookvar.Element element) {
+    final ElementStyle style;
+
+    switch (element.runtimeType) {
+      case bookvar.Header:
+        style = theme.header;
+        break;
+      case bookvar.Paragraph:
+        style = theme.paragraph;
+        break;
+      default:
+        throw Exception('Undefined element type');
+    }
+
+    return style;
+  }
+
+  Widget render(bookvar.Element element) {
+    if (element is bookvar.TextElement) {
+      final ElementStyle style = getStyle(element);
+      final TextAlign align;
+
+      switch (element.runtimeType) {
+        case bookvar.Header:
+          align = TextAlign.start;
+          break;
+        case bookvar.Paragraph:
+          align = TextAlign.justify;
+          break;
+        default:
+          throw Exception('Undefined element type');
+      }
+
+      return Padding(
+        padding: style.padding,
+        child: Text(
+          element.content,
+          style: style.textStyle,
+          textScaleFactor: theme.scaleFactor,
+          textAlign: align,
+        ),
       );
-
-  Size calculateBounds(Size container) {
-    final text = TextSpan(text: content, style: style);
-    final painter = TextPainter(text: text, textDirection: TextDirection.ltr)
-      ..layout(maxWidth: container.width - padding.horizontal);
-
-    return Size(
-      painter.width + padding.horizontal,
-      painter.height + padding.vertical,
-    );
-  }
-}
-
-class ParagraphElement extends BookElement {
-  static const _localPadding =
-      EdgeInsets.symmetric(vertical: 8, horizontal: 24);
-
-  ParagraphElement({
-    required String content,
-    required TextStyle style,
-  }) : super(content: content, style: style, padding: _localPadding);
-
-  @override
-  ParagraphElement copyWithContent(String content) =>
-      ParagraphElement(content: content, style: style);
-}
-
-class HeaderElement extends BookElement {
-  static const _localPadding =
-      EdgeInsets.only(top: 28, bottom: 8, left: 24, right: 24);
-
-  HeaderElement({
-    required String content,
-    required TextStyle style,
-  }) : super(content: content, style: style, padding: _localPadding);
-
-  @override
-  HeaderElement copyWithContent(String content) =>
-      HeaderElement(content: content, style: style);
-}
-
-class PageContainer {
-  final List<BookElement> _elements = [];
-  final Size bounds;
-  PageContainer({required this.bounds});
-
-  void append(BookElement element) {
-    _elements.add(element);
-  }
-
-  List<Widget> get widgets => _elements.map((e) => e.widget).toList();
-
-  bool canAppend(BookElement element) =>
-      element.calculateBounds(bounds).height < freeSpace;
-
-  double get freeSpace => bounds.height - filledSpace;
-
-  double get filledSpace => _elements.fold(
-      0,
-      (accumulator, element) =>
-          accumulator + element.calculateBounds(bounds).height);
-}
-
-class BookContainer {
-  final List<PageContainer> _pages = [];
-  final Size bounds;
-
-  BookContainer({required this.bounds}) {
-    _pages.add(PageContainer(bounds: bounds));
-  }
-
-  List<PageContainer> get pages => _pages;
-
-  void append(BookElement element) {
-    if (_pages.last.canAppend(element)) {
-      _pages.last.append(element);
-    } else {
-      final words = element.content.split(' ');
-      var first = '';
-
-      for (final word in words) {
-        final string = '$first $word';
-        final text = TextSpan(text: string, style: element.style);
-        final height = calculateTextBounds(
-                container: bounds, text: text, padding: element.padding)
-            .height;
-
-        if (height >= _pages.last.freeSpace) {
-          break;
-        }
-
-        first = string;
-      }
-
-      if (first.isNotEmpty) {
-        append(element.copyWithContent(first));
-      }
-
-      _pages.add(PageContainer(bounds: bounds));
-
-      if (first != element.content) {
-        final second = element.content.substring(first.length);
-        append(element.copyWithContent(second));
-      }
     }
-  }
-}
-
-class XmlToBookAdapter {
-  final String content;
-
-  XmlToBookAdapter({required this.content});
-
-  BookContainer render(
-      {required Size bounds,
-      required TextStyle headerStyle,
-      required TextStyle paragraphStyle}) {
-    final document = parse(content);
-    final nodes = document
-        .querySelectorAll("h1, h2, h3, h4, h5, h6, p")
-        .where((element) => element.text.trim().isNotEmpty)
-        .toList();
-    final bookContainer = BookContainer(bounds: bounds);
-
-    for (final node in nodes) {
-      switch (node.localName) {
-        case 'h1':
-        case 'h2':
-        case 'h3':
-        case 'h4':
-        case 'h5':
-        case 'h6':
-          bookContainer
-              .append(HeaderElement(content: node.text, style: headerStyle));
-          break;
-        case 'p':
-          bookContainer.append(
-              ParagraphElement(content: node.text, style: paragraphStyle));
-          break;
-      }
+    if (element is bookvar.Image) {
+      final buffer = Uint8List.fromList(element.buffer);
+      return Center(
+        child: Image.memory(buffer),
+      );
     }
-    return bookContainer;
+    throw Exception('Undefined element type');
   }
 }
